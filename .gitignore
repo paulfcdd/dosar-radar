@@ -1,0 +1,25 @@
+# Дані, які збирає скрапер — генеруються локально, у git не місце (40+ МБ).
+data.sqlite3
+data.sqlite3-shm
+data.sqlite3-wal
+data/
+sync.log
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Оточення
+.env
+
+# ОС та редактори
+.DS_Store
+.idea/
+.vscode/
+.claude/

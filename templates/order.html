@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Наказ {{ order.number }}{% endblock %}
+{% block body %}
+<h1>Наказ {{ order.number or '—' }} від {{ order.date }}</h1>
+<div class="card">
+  <p class="muted">Статус: <span class="tag {{ order.status }}">{{ order.status }}</span>
+     · справ: {{ order.case_count }}
+     {% if order.parsed_at %}· розібрано {{ order.parsed_at }} UTC{% endif %}</p>
+  {% if order.error %}<p class="muted">Помилка: {{ order.error }}</p>{% endif %}
+  <p><a href="{{ order.pdf_url }}" target="_blank" rel="noopener">Оригінальний PDF</a></p>
+</div>
+<div class="card">
+  <div class="scroll">
+  <table>
+    <tr><th>#</th><th>Номер справи</th><th>Діти</th><th>Рядок з PDF</th></tr>
+    {% for c in cases %}
+    <tr>
+      <td class="muted">{{ loop.index }}</td>
+      <td><strong>{{ c.case_number }}</strong></td>
+      <td>{{ c.minors or '—' }}</td>
+      <td class="muted">{{ c.raw }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="4" class="muted">Справ не знайдено.</td></tr>
+    {% endfor %}
+  </table>
+  </div>
+</div>
+{% endblock %}

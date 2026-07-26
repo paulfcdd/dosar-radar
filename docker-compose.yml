@@ -1,0 +1,15 @@
+services:
+  web:
+    build: .
+    image: dosar-radar:latest
+    container_name: dosar-radar
+    ports:
+      - "${PORT:-8000}:8000"
+    volumes:
+      - data:/data
+    environment:
+      CETATENIE_DB: /data/data.sqlite3
+    restart: unless-stopped
+
+volumes:
+  data:

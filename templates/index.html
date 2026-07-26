@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block body %}
+<h1>Накази art. 11</h1>
+
+<div class="card">
+  <div class="grid">
+    <div><div class="muted">Наказів</div><div class="big">{{ totals.orders }}</div></div>
+    <div><div class="muted">Розібрано</div><div class="big">{{ totals.parsed }}</div></div>
+    <div><div class="muted">Помилок</div><div class="big">{{ totals.errors }}</div></div>
+    <div><div class="muted">Справ</div><div class="big">{{ totals.cases }}</div></div>
+  </div>
+  <hr style="border:0;border-top:1px solid var(--line);margin:14px 0">
+  <form method="post" action="{{ url_for('start_sync') }}" class="row">
+    <button type="submit" {{ 'disabled' if sync_state.running }}>Оновити дані з сайту</button>
+    <span class="muted" id="status">{{ sync_state.message }}{% if sync_state.running %}
+      ({{ sync_state.done }}/{{ sync_state.total }}){% endif %}</span>
+  </form>
+</div>
+
+<div class="card">
+  <div class="years" style="margin-bottom:14px">
+    <a href="{{ url_for('index') }}" class="{{ 'active' if not year }}">Усі роки</a>
+    {% for y in years %}
+      <a href="{{ url_for('index', year=y.year) }}" class="{{ 'active' if year == y.year }}">
+        {{ y.year }} <span class="muted">· {{ y.orders }}</span>
+      </a>
+    {% endfor %}
+  </div>
+  <form method="get" class="row">
+    {% if year %}<input type="hidden" name="year" value="{{ year }}">{% endif %}
+    <div><label>Дата від</label><input type="date" name="from" value="{{ date_from }}"></div>
+    <div><label>Дата до</label><input type="date" name="to" value="{{ date_to }}"></div>
+    <button type="submit">Фільтрувати</button>
+    <a href="{{ url_for('index') }}" class="muted" style="padding-bottom:8px">скинути</a>
+  </form>
+</div>
+
+<div class="card">
+  <div class="muted" style="margin-bottom:8px">Знайдено наказів: {{ orders|length }}</div>
+  <div class="scroll">
+  <table>
+    <tr><th>Дата</th><th>Номер</th><th>Рік</th><th>Справ</th><th>Статус</th><th>PDF</th></tr>
+    {% for o in orders %}
+    <tr>
+      <td>{{ o.date }}</td>
+      <td><a href="{{ url_for('order', order_id=o.id) }}">{{ o.number or '—' }}</a></td>
+      <td>{{ o.year }}</td>
+      <td>{{ o.case_count }}</td>
+      <td><span class="tag {{ o.status }}">{{ o.status }}</span>
+          {% if o.error %}<div class="muted">{{ o.error }}</div>{% endif %}</td>
+      <td><a href="{{ o.pdf_url }}" target="_blank" rel="noopener">завантажити</a></td>
+    </tr>
+    {% else %}
+    <tr><td colspan="6" class="muted">Нічого не знайдено. Натисніть «Оновити дані з сайту».</td></tr>
+    {% endfor %}
+  </table>
+  </div>
+</div>
+
+<script>
+  if ({{ 'true' if sync_state.running else 'false' }}) {
+    setInterval(async () => {
+      const s = await (await fetch("{{ url_for('sync_status') }}")).json();
+      document.getElementById('status').textContent =
+        s.message + (s.running ? ` (${s.done}/${s.total})` : '');
+      if (!s.running) location.reload();
+    }, 2000);
+  }
+</script>
+{% endblock %}

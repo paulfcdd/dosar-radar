@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Пошук справи{% endblock %}
+{% block body %}
+<h1>Пошук справи за номером</h1>
+<div class="card">
+  <form method="get" class="row">
+    <div style="flex:1;min-width:220px">
+      <label>Номер справи (напр. 32805/2023 або просто 32805)</label>
+      <input name="q" value="{{ query }}" placeholder="32805/2023" style="width:100%" autofocus>
+    </div>
+    <button type="submit">Шукати</button>
+  </form>
+  <div class="muted" style="margin-top:10px">У базі {{ totals.cases }} справ із {{ totals.parsed }} наказів.</div>
+</div>
+
+{% if query %}
+<div class="card">
+  {% if results %}
+    <p><strong>Справу {{ query }} знайдено.</strong> Записів: {{ results|length }}</p>
+    <div class="scroll">
+    <table>
+      <tr><th>Справа</th><th>Дата наказу</th><th>Наказ</th><th>Діти</th><th>PDF</th></tr>
+      {% for r in results %}
+      <tr>
+        <td><strong>{{ r.case_number }}</strong></td>
+        <td>{{ r.date }}</td>
+        <td><a href="{{ url_for('order', order_id=r.order_id) }}">{{ r.number or '—' }}</a></td>
+        <td>{{ r.minors or '—' }}</td>
+        <td><a href="{{ r.pdf_url }}" target="_blank" rel="noopener">відкрити</a></td>
+      </tr>
+      {% endfor %}
+    </table>
+    </div>
+  {% else %}
+    <p>Справу <strong>{{ query }}</strong> не знайдено серед розібраних наказів.</p>
+    <p class="muted">Якщо синхронізація ще не завершена, частина наказів може бути не розібрана.</p>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}

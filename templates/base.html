@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Накази art. 11{% endblock %}</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --line:#e3e6ea; --text:#1c2024; --muted:#6b7280; --accent:#1f6feb; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#14171a; --card:#1c2024; --line:#2e343b; --text:#e8eaed; --muted:#9aa3ad; --accent:#4d9dff; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text);
+         font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+  header { background:var(--card); border-bottom:1px solid var(--line); padding:14px 20px;
+           display:flex; gap:20px; align-items:center; flex-wrap:wrap; }
+  header a { color:var(--text); text-decoration:none; font-weight:600; }
+  header a.active { color:var(--accent); }
+  main { max-width:1000px; margin:0 auto; padding:24px 20px 60px; }
+  h1 { font-size:22px; margin:0 0 16px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px; margin-bottom:16px; }
+  .muted { color:var(--muted); font-size:13px; }
+  table { width:100%; border-collapse:collapse; }
+  th, td { text-align:left; padding:9px 10px; border-bottom:1px solid var(--line); }
+  th { font-size:12px; text-transform:uppercase; color:var(--muted); letter-spacing:.04em; }
+  tr:last-child td { border-bottom:0; }
+  a { color:var(--accent); }
+  .scroll { overflow-x:auto; }
+  input, select, button { font:inherit; padding:7px 10px; border:1px solid var(--line);
+                          border-radius:7px; background:var(--card); color:var(--text); }
+  button { background:var(--accent); color:#fff; border-color:transparent; cursor:pointer; font-weight:600; }
+  form.row { display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap; }
+  label { display:block; font-size:12px; color:var(--muted); margin-bottom:4px; }
+  .tag { display:inline-block; padding:2px 8px; border-radius:20px; font-size:12px; font-weight:600; }
+  .tag.parsed { background:#1a7f3722; color:#1a7f37; }
+  .tag.pending { background:#8a6d0022; color:#9a7b00; }
+  .tag.error { background:#d1242f22; color:#d1242f; }
+  .years { display:flex; gap:8px; flex-wrap:wrap; }
+  .years a { padding:5px 12px; border:1px solid var(--line); border-radius:20px;
+             text-decoration:none; background:var(--card); }
+  .years a.active { background:var(--accent); color:#fff; border-color:transparent; }
+  .big { font-size:26px; font-weight:700; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:14px; }
+</style>
+</head>
+<body>
+<header>
+  <a href="{{ url_for('index') }}" class="{{ 'active' if request.endpoint == 'index' }}">Накази</a>
+  <a href="{{ url_for('search') }}" class="{{ 'active' if request.endpoint == 'search' }}">Пошук справи</a>
+  <span class="muted">cetatenie.just.ro · art. 11</span>
+</header>
+<main>{% block body %}{% endblock %}</main>
+</body>
+</html>
