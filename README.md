@@ -186,6 +186,7 @@ recent writes.
 |---|---|---|
 | `CETATENIE_DB` | `./data.sqlite3` (`/data/data.sqlite3` in Docker) | Database path |
 | `PORT` | `8000` | Host port published by compose |
+| `BIND` | `127.0.0.1` | Interface compose binds to. Behind a reverse proxy leave it alone; set `0.0.0.0` only if you really want the app exposed directly |
 
 The container runs `gunicorn` with **one worker and eight threads** on purpose: background
 sync progress is held in process memory, so with several workers `/sync/status` would answer
