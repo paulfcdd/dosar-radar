@@ -41,7 +41,7 @@ any of them, you are expected to open them one by one and read.
 | 🔎 **Search by case number** | `29293/2023`, `48031/RD/2023`, or just `29293` — all find the same file |
 | 📄 **Full order index** | Every order with date, number, case count and a link to the original PDF |
 | 🗂 **Per-order case lists** | Open any order and see every case number printed in it |
-| 🔄 **One-click re-sync** | Fetches new orders and parses only what has not been parsed yet |
+| 🔄 **Keeps itself current** | Re-syncs every 3 hours on its own, parsing only what is new |
 | 🖥 **CLI** | Same search and sync without the web UI — useful in scripts and cron |
 | 🐳 **Docker-first** | `make up` and you have it; data lives in a named volume |
 
@@ -156,6 +156,7 @@ Run `make` with no arguments for this list at any time.
 | **Data** | |
 | `make sync` | Full sync — index + all unparsed PDFs |
 | `make sync-fast` | Trial run on 20 orders |
+| `make sync-retry` | Sync, ignoring retry backoff |
 | `make stats` | Orders and cases in the database |
 | `make search Q=…` | Look up a case number |
 | `make db-export` | Snapshot the volume's database to `./data.sqlite3` |
@@ -187,6 +188,34 @@ recent writes.
 | `CETATENIE_DB` | `./data.sqlite3` (`/data/data.sqlite3` in Docker) | Database path |
 | `PORT` | `8000` | Host port published by compose |
 | `BIND` | `127.0.0.1` | Interface compose binds to. Behind a reverse proxy leave it alone; set `0.0.0.0` only if you really want the app exposed directly |
+| `SYNC_INTERVAL_HOURS` | `3` | How often the built-in scheduler re-syncs |
+| `SYNC_ENABLED` | `1` | Set to `0` to disable automatic syncing entirely |
+
+### Syncing
+
+A background thread in the web process re-syncs every `SYNC_INTERVAL_HOURS`, with a couple of
+minutes of jitter so it does not hit the ministry exactly on the hour. The last run is
+persisted, so restarting the container does not reset the schedule or trigger a stampede.
+
+There is **no HTTP endpoint to trigger a sync**. The service is meant to be public, and an
+unauthenticated trigger would let anyone use your server to hammer a government site. Manual
+runs go through the CLI:
+
+```bash
+make sync
+```
+
+Both paths take an exclusive `flock` on the data volume, so a manual run and a scheduled one
+can never overlap — whichever is second exits immediately.
+
+**Failed orders back off.** Three orders have been dead on the ministry's own site for years;
+retrying them every three hours costs a 60-second timeout each and fills the logs with alarming
+errors from a perfectly healthy service. Retries are spaced out instead — 1h, 6h, 24h, 72h, then
+weekly. To ignore the backoff and retry everything now:
+
+```bash
+make sync-retry
+```
 
 The container runs `gunicorn` with **one worker and eight threads** on purpose: background
 sync progress is held in process memory, so with several workers `/sync/status` would answer

@@ -10,11 +10,16 @@
     <div><div class="muted">Справ</div><div class="big">{{ totals.cases }}</div></div>
   </div>
   <hr style="border:0;border-top:1px solid var(--line);margin:14px 0">
-  <form method="post" action="{{ url_for('start_sync') }}" class="row">
-    <button type="submit" {{ 'disabled' if sync_state.running }}>Оновити дані з сайту</button>
-    <span class="muted" id="status">{{ sync_state.message }}{% if sync_state.running %}
-      ({{ sync_state.done }}/{{ sync_state.total }}){% endif %}</span>
-  </form>
+  <div class="muted">
+    Дані оновлюються автоматично.
+    {% if schedule.last %}
+      Востаннє: {{ schedule.last }} UTC · наступне: {{ schedule.next }} UTC.
+    {% else %}
+      Перше оновлення ще не відбулось.
+    {% endif %}
+    <span id="status">{% if sync_state.running %}
+      — {{ sync_state.message }} ({{ sync_state.done }}/{{ sync_state.total }}){% endif %}</span>
+  </div>
 </div>
 
 <div class="card">
@@ -62,7 +67,7 @@
     setInterval(async () => {
       const s = await (await fetch("{{ url_for('sync_status') }}")).json();
       document.getElementById('status').textContent =
-        s.message + (s.running ? ` (${s.done}/${s.total})` : '');
+        s.running ? ` — ${s.message} (${s.done}/${s.total})` : '';
       if (!s.running) location.reload();
     }, 2000);
   }

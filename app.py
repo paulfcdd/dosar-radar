@@ -3,12 +3,13 @@
 import logging
 import os
 
-from flask import Flask, jsonify, redirect, render_template, request, url_for
+from flask import Flask, jsonify, render_template, request
 
 from cetatenie import db, sync
 
 app = Flask(__name__)
 db.init()
+sync.start_scheduler()
 
 
 @app.route("/")
@@ -28,6 +29,7 @@ def index():
         date_from=date_from or "",
         date_to=date_to or "",
         sync_state=sync.state(),
+        schedule=sync.schedule(),
     )
 
 
@@ -47,12 +49,9 @@ def order(order_id):
     return render_template("order.html", order=order_row, cases=cases)
 
 
-@app.route("/sync", methods=["POST"])
-def start_sync():
-    sync.run_background(workers=int(request.form.get("workers", 4)))
-    return redirect(url_for("index"))
-
-
+# Ручного тригера синхронізації тут навмисно немає: сервіс публічний, а
+# незахищений POST дозволяв би будь-кому ганяти запити по сайту міністерства.
+# Оновлення робить планувальник, а разова синхронізація — це `make sync`.
 @app.route("/sync/status")
 def sync_status():
     return jsonify(sync.state())

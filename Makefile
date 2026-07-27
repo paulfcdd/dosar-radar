@@ -49,6 +49,9 @@ sync: ## Повна синхронізація: список наказів + р
 sync-fast: ## Пробний прогін на 20 наказах (перевірити, що все живе)
 	$(RUN) python cli.py sync --workers $(WORKERS) --limit 20
 
+sync-retry: ## Синхронізація, ігноруючи паузи після невдалих спроб
+	$(RUN) python cli.py sync --workers $(WORKERS) --retry-failed
+
 stats: ## Скільки наказів і справ у базі
 	$(RUN) python cli.py stats
 

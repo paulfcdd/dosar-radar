@@ -14,6 +14,8 @@ def main():
     p_sync.add_argument("--workers", type=int, default=4)
     p_sync.add_argument("--limit", type=int, help="розібрати лише N наказів")
     p_sync.add_argument("--no-refresh", action="store_true", help="не перечитувати список")
+    p_sync.add_argument("--retry-failed", action="store_true",
+                        help="спробувати й ті накази, що чекають наступної спроби")
 
     p_search = sub.add_parser("search", help="знайти справу за номером")
     p_search.add_argument("number", help="напр. 32805/2023")
@@ -25,7 +27,12 @@ def main():
     db.init()
 
     if args.command == "sync":
-        count = sync.run(workers=args.workers, limit=args.limit, refresh=not args.no_refresh)
+        try:
+            count = sync.run(workers=args.workers, limit=args.limit,
+                             refresh=not args.no_refresh, ignore_backoff=args.retry_failed)
+        except sync.SyncBusy:
+            print("синхронізація вже виконується — спробуйте пізніше")
+            return
         print("оброблено наказів: %d" % count)
     elif args.command == "search":
         results = db.search_case(args.number)

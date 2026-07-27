@@ -2,7 +2,7 @@
 
 import os
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 
 DB_PATH = os.environ.get(
     "CETATENIE_DB",
@@ -32,10 +32,29 @@ CREATE TABLE IF NOT EXISTS cases (
     raw         TEXT,
     UNIQUE(order_id, case_number)
 );
+CREATE TABLE IF NOT EXISTS meta (
+    key   TEXT PRIMARY KEY,
+    value TEXT
+);
 CREATE INDEX IF NOT EXISTS idx_cases_number ON cases(case_number);
 CREATE INDEX IF NOT EXISTS idx_cases_key ON cases(search_key);
 CREATE INDEX IF NOT EXISTS idx_orders_date ON orders(date_iso);
 """
+
+# Колонки, додані після першого релізу: у робочих базах їх ще немає.
+MIGRATIONS = (
+    ("orders", "attempts", "INTEGER NOT NULL DEFAULT 0"),
+    ("orders", "next_try_at", "TEXT"),
+)
+
+# Пауза перед наступною спробою, за номером спроби. Три накази на сайті
+# міністерства мертві роками — без цього кожна синхронізація витрачала б на
+# них по 60 с таймауту й засипала лог помилками справного сервісу.
+BACKOFF_HOURS = (1, 6, 24, 72, 168)
+
+
+def utcnow():
+    return datetime.utcnow().replace(microsecond=0)
 
 
 def connect():
@@ -49,6 +68,25 @@ def connect():
 def init():
     with connect() as conn:
         conn.executescript(SCHEMA)
+        for table, column, ddl in MIGRATIONS:
+            columns = {row["name"] for row in conn.execute("PRAGMA table_info(%s)" % table)}
+            if column not in columns:
+                conn.execute("ALTER TABLE %s ADD COLUMN %s %s" % (table, column, ddl))
+
+
+def get_meta(key, default=None):
+    with connect() as conn:
+        row = conn.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
+    return row["value"] if row else default
+
+
+def set_meta(key, value):
+    with connect() as conn:
+        conn.execute(
+            "INSERT INTO meta (key, value) VALUES (?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (key, str(value)),
+        )
 
 
 def to_iso(date):
@@ -90,26 +128,42 @@ def save_cases(order_id, cases):
             ],
         )
         conn.execute(
-            """UPDATE orders SET status = 'parsed', error = NULL,
-                                 case_count = ?, parsed_at = ? WHERE id = ?""",
-            (len(cases), datetime.utcnow().isoformat(timespec="seconds"), order_id),
+            """UPDATE orders SET status = 'parsed', error = NULL, attempts = 0,
+                                 next_try_at = NULL, case_count = ?, parsed_at = ?
+               WHERE id = ?""",
+            (len(cases), utcnow().isoformat(), order_id),
         )
 
 
 def mark_error(order_id, message):
+    """Позначає невдачу й відсуває наступну спробу тим далі, чим більше їх було."""
     with connect() as conn:
+        row = conn.execute("SELECT attempts FROM orders WHERE id = ?", (order_id,)).fetchone()
+        attempts = (row["attempts"] if row else 0) + 1
+        hours = BACKOFF_HOURS[min(attempts, len(BACKOFF_HOURS)) - 1]
         conn.execute(
-            "UPDATE orders SET status = 'error', error = ? WHERE id = ?",
-            (str(message)[:500], order_id),
+            """UPDATE orders SET status = 'error', error = ?, attempts = ?, next_try_at = ?
+               WHERE id = ?""",
+            (
+                str(message)[:500],
+                attempts,
+                (utcnow() + timedelta(hours=hours)).isoformat(),
+                order_id,
+            ),
         )
 
 
-def pending_orders(limit=None):
-    query = "SELECT * FROM orders WHERE status != 'parsed' ORDER BY date_iso DESC"
+def pending_orders(limit=None, ignore_backoff=False):
+    query = "SELECT * FROM orders WHERE status != 'parsed'"
+    params = []
+    if not ignore_backoff:
+        query += " AND (next_try_at IS NULL OR next_try_at <= ?)"
+        params.append(utcnow().isoformat())
+    query += " ORDER BY date_iso DESC"
     if limit:
         query += " LIMIT %d" % int(limit)
     with connect() as conn:
-        return [dict(row) for row in conn.execute(query)]
+        return [dict(row) for row in conn.execute(query, params)]
 
 
 def stats():
