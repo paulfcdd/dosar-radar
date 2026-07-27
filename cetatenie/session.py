@@ -7,10 +7,15 @@
 """
 
 import hashlib
+import logging
 import re
+import socket
 import threading
 
 import requests
+import urllib3.util.connection
+
+log = logging.getLogger(__name__)
 
 BASE_URL = "https://cetatenie.just.ro"
 USER_AGENT = (
@@ -26,6 +31,38 @@ _MAX_NONCE = 20_000_000
 
 class ChallengeError(RuntimeError):
     pass
+
+
+def _ipv6_is_routable():
+    """Чи є справжній маршрут в IPv6, а не лише можливість створити сокет.
+
+    UDP-`connect` не шле жодного пакета — лише просить ядро вибрати маршрут,
+    тож перевірка миттєва й безкоштовна.
+    """
+    try:
+        with socket.socket(socket.AF_INET6, socket.SOCK_DGRAM) as probe:
+            probe.settimeout(1)
+            probe.connect(("2001:4860:4860::8888", 53))
+        return True
+    except OSError:
+        return False
+
+
+def prefer_ipv4_if_needed():
+    """Вимикає IPv6 у urllib3, якщо маршруту насправді немає.
+
+    У docker-мережі без IPv6 контейнер усе одно вміє створити AF_INET6-сокет,
+    тому `urllib3.util.connection.HAS_IPV6` лишається True. cetatenie.just.ro
+    має AAAA-запис, glibc віддає його першим — і кожне таке з'єднання падає з
+    `[Errno 101] Network is unreachable`. Ефект спостерігався як ~70% невдалих
+    завантажень PDF, тобто синк «майже працює», що гірше за явну поломку.
+    """
+    if urllib3.util.connection.HAS_IPV6 and not _ipv6_is_routable():
+        urllib3.util.connection.HAS_IPV6 = False
+        log.info("IPv6 без маршруту — ходимо лише через IPv4")
+
+
+prefer_ipv4_if_needed()
 
 
 def _looks_like_challenge(text):
