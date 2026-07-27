@@ -7,6 +7,14 @@ from flask import Flask, jsonify, render_template, request
 
 from cetatenie import db, sync
 
+# Налаштовуємо логування на імпорті, а не лише в __main__: під gunicorn
+# гілка __main__ не виконується, і все, що пише планувальник, зникало б —
+# включно з повідомленням про його падіння.
+logging.basicConfig(
+    level=os.environ.get("LOG_LEVEL", "INFO").upper(),
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
+
 app = Flask(__name__)
 db.init()
 sync.start_scheduler()
@@ -58,5 +66,4 @@ def sync_status():
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     app.run(host="127.0.0.1", port=int(os.environ.get("PORT", 8000)), debug=False)
