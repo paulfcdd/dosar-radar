@@ -7,11 +7,16 @@
 """
 
 import hashlib
+import logging
 import os
 import re
+import socket
 import threading
 
 import requests
+import urllib3.util.connection
+
+log = logging.getLogger(__name__)
 
 BASE_URL = "https://cetatenie.just.ro"
 USER_AGENT = (
@@ -27,6 +32,32 @@ _MAX_NONCE = 20_000_000
 
 class ChallengeError(RuntimeError):
     pass
+
+
+def _ipv6_is_routable():
+    """Перевіряє маршрут IPv6 без надсилання мережевих пакетів."""
+    try:
+        with socket.socket(socket.AF_INET6, socket.SOCK_DGRAM) as probe:
+            probe.settimeout(1)
+            probe.connect(("2001:4860:4860::8888", 53))
+        return True
+    except OSError:
+        return False
+
+
+def prefer_ipv4_if_needed():
+    """Не дає Docker-контейнеру зависати на AAAA без IPv6-маршруту.
+
+    Коли IPv6 недоступний у bridge-мережі, urllib3 може зупинитися на AAAA
+    записі й не дійти до IPv4. Дозволений proxy не зачіпаємо: він сам виконує
+    DNS-резолвінг цільового хоста.
+    """
+    if urllib3.util.connection.HAS_IPV6 and not _ipv6_is_routable():
+        urllib3.util.connection.HAS_IPV6 = False
+        log.info("IPv6 без маршруту — для прямого доступу використовуємо IPv4")
+
+
+prefer_ipv4_if_needed()
 
 
 def _looks_like_challenge(text):
