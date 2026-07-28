@@ -57,6 +57,11 @@ class SyncScheduleTests(unittest.TestCase):
         next_at = datetime.fromisoformat(db.get_meta(sync.NEXT_SYNC_KEY))
         self.assertEqual(next_at, last_at + timedelta(hours=sync.interval_hours()))
 
+    def test_network_error_is_safe_for_public_ui(self):
+        message = sync.public_error("HTTPSConnectionPool(host='cetatenie.just.ro')")
+        self.assertIn("не може підключитися", message)
+        self.assertNotIn("HTTPSConnectionPool", message)
+
 
 class SessionTests(unittest.TestCase):
     def test_approved_proxy_is_used_for_both_protocols(self):

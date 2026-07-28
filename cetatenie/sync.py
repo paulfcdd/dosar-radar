@@ -9,6 +9,8 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 
+import requests
+
 from . import db
 from .scraper import INDEX_URL, parse_index, parse_pdf
 from .session import Session
@@ -128,6 +130,27 @@ def _failure_count():
         return 0
 
 
+def public_error(error):
+    """Коротке безпечне для публічного UI пояснення помилки синхронізації."""
+    message = str(error)
+    if isinstance(error, SourceAccessError):
+        return message
+    if isinstance(error, str):
+        if not any(
+            token in message
+            for token in ("HTTPSConnectionPool", "ConnectionError", "ConnectTimeout", "Network is unreachable")
+        ):
+            return message
+    if isinstance(error, requests.RequestException) or any(
+        token in message for token in ("HTTPSConnectionPool", "ConnectionError", "ConnectTimeout", "Network is unreachable")
+    ):
+        return (
+            "Сервер тимчасово не може підключитися до сайту міністерства. "
+            "Автоматична спроба повториться за розкладом."
+        )
+    return "Не вдалося оновити дані з сайту міністерства. Автоматична спроба повториться за розкладом."
+
+
 def retry_delay(count):
     """Експоненційна пауза після помилки, щоб не тиснути на джерело."""
     base_minutes = float(os.environ.get("SYNC_RETRY_MINUTES", "5"))
@@ -148,7 +171,7 @@ def _record_failure(exc):
     now = db.utcnow()
     count = _failure_count() + 1
     next_at = now + retry_delay(count)
-    message = str(exc)[:500]
+    message = public_error(exc)[:500]
     db.set_meta(LAST_FAILURE_KEY, now.isoformat())
     db.set_meta(LAST_ERROR_KEY, message)
     db.set_meta(FAILURE_COUNT_KEY, count)
@@ -224,7 +247,7 @@ def schedule():
             if _meta_datetime(LAST_FAILURE_KEY)
             else None
         ),
-        "error": db.get_meta(LAST_ERROR_KEY) or None,
+        "error": public_error(db.get_meta(LAST_ERROR_KEY)) if db.get_meta(LAST_ERROR_KEY) else None,
         "next": next_at.isoformat(sep=" ") if next_at else None,
     }
 
