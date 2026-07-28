@@ -13,6 +13,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY app.py cli.py ./
 COPY cetatenie/ ./cetatenie/
 COPY templates/ ./templates/
+COPY tests/ ./tests/
 
 # База лежить у томі, тому власником має бути непривілейований користувач:
 # SQLite у режимі WAL пише не лише сам файл, а й -wal/-shm поруч із ним.

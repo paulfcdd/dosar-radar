@@ -13,12 +13,19 @@
   <div class="muted">
     Дані оновлюються автоматично.
     {% if schedule.last %}
-      Востаннє: {{ schedule.last }} UTC · наступне: {{ schedule.next }} UTC.
+      Останнє успішне: {{ schedule.last }} UTC.
     {% else %}
-      Перше оновлення ще не відбулось.
+      Успішного оновлення ще не було.
     {% endif %}
+    {% if schedule.next %}Наступна спроба: {{ schedule.next }} UTC.{% endif %}
     <span id="status">{% if sync_state.running %}
       — {{ sync_state.message }} ({{ sync_state.done }}/{{ sync_state.total }}){% endif %}</span>
+    {% if schedule.error %}
+      <div class="error" role="alert">
+        Остання спроба{% if schedule.last_failure %} ({{ schedule.last_failure }} UTC){% endif %} не вдалася:
+        {{ schedule.error }}
+      </div>
+    {% endif %}
   </div>
 </div>
 

@@ -62,7 +62,7 @@ def order(order_id):
 # Оновлення робить планувальник, а разова синхронізація — це `make sync`.
 @app.route("/sync/status")
 def sync_status():
-    return jsonify(sync.state())
+    return jsonify({**sync.state(), "schedule": sync.schedule()})
 
 
 if __name__ == "__main__":

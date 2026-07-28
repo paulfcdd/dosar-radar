@@ -12,6 +12,10 @@ services:
       - data:/data
     environment:
       CETATENIE_DB: /data/data.sqlite3
+      # Для погодженого egress-proxy або IP, внесеного власником джерела в allowlist.
+      CETATENIE_PROXY_URL: ${CETATENIE_PROXY_URL:-}
+      SYNC_RETRY_MINUTES: ${SYNC_RETRY_MINUTES:-5}
+      SYNC_RETRY_MAX_MINUTES: ${SYNC_RETRY_MAX_MINUTES:-360}
     restart: unless-stopped
 
 volumes:

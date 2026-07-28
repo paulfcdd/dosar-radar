@@ -3,7 +3,6 @@
 import fcntl
 import logging
 import os
-import random
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -17,6 +16,11 @@ from .session import Session
 log = logging.getLogger(__name__)
 
 LAST_SYNC_KEY = "last_sync_at"
+LAST_ATTEMPT_KEY = "last_sync_attempt_at"
+LAST_FAILURE_KEY = "last_sync_failure_at"
+LAST_ERROR_KEY = "last_sync_error"
+FAILURE_COUNT_KEY = "sync_failure_count"
+NEXT_SYNC_KEY = "next_sync_at"
 LOCK_PATH = os.path.join(os.path.dirname(os.path.abspath(db.DB_PATH)), "sync.lock")
 
 # pdfplumber голосно скаржиться на нестандартні кольори у цих PDF — це не помилки.
@@ -26,12 +30,22 @@ logging.getLogger("pdfplumber").setLevel(logging.ERROR)
 _session = Session()
 
 # Стан фонової синхронізації для веб-інтерфейсу.
-_state = {"running": False, "done": 0, "total": 0, "message": "не запускалась"}
+_state = {
+    "running": False,
+    "done": 0,
+    "total": 0,
+    "message": "не запускалась",
+    "last_error": None,
+}
 _state_lock = threading.Lock()
 
 
 class SyncBusy(RuntimeError):
     """Синхронізація вже йде — в цьому або в іншому процесі."""
+
+
+class SourceAccessError(RuntimeError):
+    """Джерело відхилило запит або недоступне для сервера."""
 
 
 @contextmanager
@@ -68,6 +82,10 @@ def _set(**kwargs):
 def refresh_index():
     """Перечитує сторінку зі списком наказів. Повертає (всього, нових)."""
     response = _session.get(INDEX_URL)
+    if response.status_code == 403 and "WAF Forbidden" in response.text[:2000]:
+        raise SourceAccessError(
+            "WAF cetatenie.just.ro відхилив IP сервера; потрібен allowlist або дозволений proxy"
+        )
     response.raise_for_status()
     orders = parse_index(response.text)
     if not orders:
@@ -93,25 +111,77 @@ def parse_order(order):
         return 0
 
 
+def _meta_datetime(key):
+    value = db.get_meta(key)
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        return None
+
+
+def _failure_count():
+    try:
+        return int(db.get_meta(FAILURE_COUNT_KEY, "0"))
+    except ValueError:
+        return 0
+
+
+def retry_delay(count):
+    """Експоненційна пауза після помилки, щоб не тиснути на джерело."""
+    base_minutes = float(os.environ.get("SYNC_RETRY_MINUTES", "5"))
+    max_minutes = float(os.environ.get("SYNC_RETRY_MAX_MINUTES", "360"))
+    return timedelta(minutes=min(base_minutes * (2 ** max(0, count - 1)), max_minutes))
+
+
+def _record_success():
+    now = db.utcnow()
+    db.set_meta(LAST_SYNC_KEY, now.isoformat())
+    db.set_meta(NEXT_SYNC_KEY, (now + timedelta(hours=interval_hours())).isoformat())
+    db.set_meta(FAILURE_COUNT_KEY, 0)
+    db.set_meta(LAST_ERROR_KEY, "")
+    _set(running=False, message="готово", last_error=None)
+
+
+def _record_failure(exc):
+    now = db.utcnow()
+    count = _failure_count() + 1
+    next_at = now + retry_delay(count)
+    message = str(exc)[:500]
+    db.set_meta(LAST_FAILURE_KEY, now.isoformat())
+    db.set_meta(LAST_ERROR_KEY, message)
+    db.set_meta(FAILURE_COUNT_KEY, count)
+    db.set_meta(NEXT_SYNC_KEY, next_at.isoformat())
+    _set(running=False, message="помилка синхронізації", last_error=message)
+    return next_at
+
+
 def run(workers=4, limit=None, refresh=True, ignore_backoff=False):
     """Повна синхронізація: індекс + усі нерозібрані накази."""
     with exclusive():
-        if refresh:
-            _set(running=True, message="оновлюю список наказів…", done=0, total=0)
-            total, added = refresh_index()
-            log.info("на сторінці %d наказів, нових %d", total, added)
+        attempt_at = db.utcnow()
+        db.set_meta(LAST_ATTEMPT_KEY, attempt_at.isoformat())
+        _set(running=True, message="оновлюю список наказів…", done=0, total=0, last_error=None)
+        try:
+            if refresh:
+                total, added = refresh_index()
+                log.info("на сторінці %d наказів, нових %d", total, added)
 
-        orders = db.pending_orders(limit, ignore_backoff=ignore_backoff)
-        _set(running=True, total=len(orders), done=0, message="розбираю PDF…")
+            orders = db.pending_orders(limit, ignore_backoff=ignore_backoff)
+            _set(running=True, total=len(orders), done=0, message="розбираю PDF…")
 
-        if orders:
-            with ThreadPoolExecutor(max_workers=workers) as pool:
-                for _ in pool.map(parse_order, orders):
-                    with _state_lock:
-                        _state["done"] += 1
+            if orders:
+                with ThreadPoolExecutor(max_workers=workers) as pool:
+                    for _ in pool.map(parse_order, orders):
+                        with _state_lock:
+                            _state["done"] += 1
+        except Exception as exc:
+            next_at = _record_failure(exc)
+            log.warning("синхронізація не виконалась; наступна спроба %s: %s", next_at, exc)
+            raise
 
-        db.set_meta(LAST_SYNC_KEY, db.utcnow().isoformat())
-        _set(running=False, message="готово")
+        _record_success()
         return len(orders)
 
 
@@ -130,7 +200,6 @@ def _run_guarded(**kwargs):
         log.info("синхронізація вже йде — пропускаю")
     except Exception as exc:  # noqa: BLE001
         log.exception("синхронізація впала")
-        _set(running=False, message="помилка: %s" % exc)
 
 
 def interval_hours():
@@ -138,27 +207,34 @@ def interval_hours():
 
 
 def schedule():
-    """Коли синхронізували востаннє й коли планується наступна."""
-    last = db.get_meta(LAST_SYNC_KEY)
-    if not last:
-        return {"last": None, "next": None}
-    try:
-        last_at = datetime.fromisoformat(last)
-    except ValueError:
-        return {"last": None, "next": None}
+    """Показує останній успіх, помилку та фактичний час наступної спроби."""
+    last_at = _meta_datetime(LAST_SYNC_KEY)
+    next_at = _meta_datetime(NEXT_SYNC_KEY)
+    if not next_at and last_at:
+        next_at = last_at + timedelta(hours=interval_hours())
     return {
-        "last": last_at.isoformat(sep=" "),
-        "next": (last_at + timedelta(hours=interval_hours())).isoformat(sep=" "),
+        "last": last_at.isoformat(sep=" ") if last_at else None,
+        "last_attempt": (
+            _meta_datetime(LAST_ATTEMPT_KEY).isoformat(sep=" ")
+            if _meta_datetime(LAST_ATTEMPT_KEY)
+            else None
+        ),
+        "last_failure": (
+            _meta_datetime(LAST_FAILURE_KEY).isoformat(sep=" ")
+            if _meta_datetime(LAST_FAILURE_KEY)
+            else None
+        ),
+        "error": db.get_meta(LAST_ERROR_KEY) or None,
+        "next": next_at.isoformat(sep=" ") if next_at else None,
     }
 
 
 def _seconds_until_due():
-    last = db.get_meta(LAST_SYNC_KEY)
-    if not last:
-        return 0
-    try:
-        due = datetime.fromisoformat(last) + timedelta(hours=interval_hours())
-    except ValueError:
+    due = _meta_datetime(NEXT_SYNC_KEY)
+    if not due:
+        last = _meta_datetime(LAST_SYNC_KEY)
+        due = last + timedelta(hours=interval_hours()) if last else None
+    if not due:
         return 0
     return max(0, (due - db.utcnow()).total_seconds())
 
@@ -170,10 +246,6 @@ def _scheduler_loop():
             # Прокидаємось не рідше ніж раз на хвилину, щоб зміна інтервалу
             # чи ручний синк не залишили нас спати на години.
             time.sleep(min(wait, 60))
-            continue
-        # Джитер, щоб не стукати рівно о цілій годині разом з усіма.
-        time.sleep(random.uniform(0, 120))
-        if _seconds_until_due() > 0:
             continue
         log.info("плановий синк")
         _run_guarded()

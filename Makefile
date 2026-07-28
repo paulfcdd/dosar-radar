@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help build up down restart logs ps sh sync sync-fast stats search \
+.PHONY: help build up down restart logs ps sh sync sync-fast stats search test \
         db-export db-import clean venv dev cli-sync cli-stats
 
 COMPOSE ?= docker compose
@@ -51,6 +51,9 @@ sync-fast: ## Пробний прогін на 20 наказах (перевір
 
 sync-retry: ## Синхронізація, ігноруючи паузи після невдалих спроб
 	$(RUN) python cli.py sync --workers $(WORKERS) --retry-failed
+
+test: ## Запустити перевірки без звернення до сайту міністерства
+	$(RUN) python -m unittest discover -s tests -v
 
 stats: ## Скільки наказів і справ у базі
 	$(RUN) python cli.py stats

@@ -189,13 +189,21 @@ recent writes.
 | `PORT` | `8000` | Host port published by compose |
 | `BIND` | `127.0.0.1` | Interface compose binds to. Behind a reverse proxy leave it alone; set `0.0.0.0` only if you really want the app exposed directly |
 | `SYNC_INTERVAL_HOURS` | `3` | How often the built-in scheduler re-syncs |
+| `SYNC_RETRY_MINUTES` | `5` | First retry delay after an error; it doubles on subsequent failures |
+| `SYNC_RETRY_MAX_MINUTES` | `360` | Maximum delay between failed attempts |
+| `CETATENIE_PROXY_URL` | — | Approved HTTP(S) egress proxy for reaching the source |
 | `SYNC_ENABLED` | `1` | Set to `0` to disable automatic syncing entirely |
 
 ### Syncing
 
-A background thread in the web process re-syncs every `SYNC_INTERVAL_HOURS`, with a couple of
-minutes of jitter so it does not hit the ministry exactly on the hour. The last run is
-persisted, so restarting the container does not reset the schedule or trigger a stampede.
+A background thread in the web process re-syncs every `SYNC_INTERVAL_HOURS`. Both successful
+runs and failures are persisted, so restarting the container does not reset the schedule. A
+failed index refresh retries with exponential backoff (five minutes by default), instead of
+repeatedly hitting the ministry every minute.
+
+If the ministry's WAF blocks the server IP, the service shows the precise error and pauses
+retries. It cannot fetch new data until the IP is allowlisted or `CETATENIE_PROXY_URL` points
+to an approved egress proxy.
 
 There is **no HTTP endpoint to trigger a sync**. The service is meant to be public, and an
 unauthenticated trigger would let anyone use your server to hammer a government site. Manual
